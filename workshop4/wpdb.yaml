@@ -1,0 +1,85 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+    name: wp-secret
+    labels:
+        app: wordpress
+data:
+    MYSQL_PASSWORD: Y2hhbmdlaXQ=
+   
+---
+    
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: wpdb-deploy    
+    labels:
+        app: wordpress
+    
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            app: wordpress
+    
+    template:
+        metadata:
+            name: wpdb-pod
+            labels:
+                app: wordpress
+        spec:
+            volumes:
+            - name: wpdb-vol
+              persistentVolumeClaim:
+                claimName: wpdb-pvc
+            - name: share-dir
+              emptyDir: {}
+
+            initContainers:
+            - name: busybox
+              image: busybox
+              volumeMounts:
+              - name: wpdb-vol
+                mountPath: /scrub
+              - name: share-dir
+                mountPath: /tmp/share
+              command:
+              - /bin/sh
+              - -c
+              - "test -e /scrub && rm -rf /scrub/..?* /scrub/.[!.]* /scrub/*  && test -z \"$(ls -A /scrub)\" || exit 1"
+
+            containers:
+            - name: wpdb-container
+              image: chukmunnlee/my-nwdb:v3
+              imagePullPolicy: IfNotPresent
+              
+              envFrom:
+              - secretRef:
+                    name: wp-secret
+              ports:
+              - name: wpdb-port
+                containerPort: 3306
+
+              volumeMounts:
+              - name: wpdb-vol
+                mountPath: /var/lib/mysql
+    
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+    name: wpdb-svc
+    labels:
+        app: wordpress
+spec:
+    type: ClusterIP
+    selector:
+        app: wordpress
+    ports:
+    - port: 3306
+      targetPort: wpdb-port
+
+---
+
